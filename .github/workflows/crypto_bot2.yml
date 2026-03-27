@@ -1,0 +1,33 @@
+name: Krypto-Bot 2 – EMA/RSI + Gestaffelter TP
+
+on:
+  schedule:
+    # Alle 30 Minuten, 24/7 (Krypto schläft nicht)
+    - cron: '*/30 * * * *'
+  workflow_dispatch:  # Manueller Start jederzeit möglich
+
+jobs:
+  krypto-scan:
+    name: Krypto-Scan (BTC/ETH/Altcoins)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Abhängigkeiten installieren
+        run: |
+          pip install --upgrade pip
+          pip install alpaca-py numpy pandas pytz
+
+      - name: Krypto-Bot ausführen
+        env:
+          ALPACA_API_KEY:    ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_API_SECRET: ${{ secrets.ALPACA_API_SECRET }}
+        run: python bot.py
