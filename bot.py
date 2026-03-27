@@ -8,6 +8,7 @@ Stop-Loss:   1.5% | Scan: alle 30 Min via GitHub Actions (24/7)
 
 import os
 import logging
+import requests
 import numpy as np
 from datetime import datetime, timedelta, timezone
 
@@ -29,6 +30,23 @@ log = logging.getLogger(__name__)
 # ── Konfiguration ──────────────────────────────────────────────────────────────
 API_KEY    = os.environ.get("ALPACA_API_KEY",    "")
 API_SECRET = os.environ.get("ALPACA_API_SECRET", "")
+TG_TOKEN   = os.environ.get("TELEGRAM_TOKEN",   "")
+TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+
+# ── Telegram ───────────────────────────────────────────────────────────────────
+def telegram(msg: str):
+    """Sendet eine Nachricht an Telegram."""
+    if not TG_TOKEN or not TG_CHAT_ID:
+        return
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+            json={"chat_id": TG_CHAT_ID, "text": msg, "parse_mode": "HTML"},
+            timeout=10
+        )
+    except Exception as e:
+        log.warning(f"Telegram-Fehler: {e}")
 
 # 3-Tier Portfolio – 10 Coins + 10% Cash-Reserve
 PORTFOLIO = {
@@ -172,6 +190,13 @@ def pruefe_gestaffelter_tp(trading_client, symbol: str, kurs: float):
         try:
             trading_client.close_position(sym_clean)
             log.info(f"  ✅ Position {sym_clean} vollständig geschlossen")
+            telegram(
+                f"🏆 <b>TAKE-PROFIT 2 (+10%) – Krypto Bot 2</b>\n\n"
+                f"🪙 Symbol: <b>{symbol}</b>\n"
+                f"💰 P&L: {unrealized*100:+.1f}%\n"
+                f"✅ Position vollständig geschlossen\n\n"
+                f"<i>Paper Trading – kein echtes Geld</i>"
+            )
         except Exception as e:
             log.error(f"  ❌ TP2-Fehler {symbol}: {e}")
 
@@ -181,6 +206,13 @@ def pruefe_gestaffelter_tp(trading_client, symbol: str, kurs: float):
         try:
             trading_client.close_position(sym_clean)
             log.info(f"  ✅ Stop-Loss-Order ausgeführt: {sym_clean}")
+            telegram(
+                f"🛑 <b>STOP-LOSS ausgelöst – Krypto Bot 2</b>\n\n"
+                f"🪙 Symbol: <b>{symbol}</b>\n"
+                f"💸 Verlust: {unrealized*100:.1f}%\n"
+                f"🔒 Position geschlossen – Kapital gesichert\n\n"
+                f"<i>Paper Trading – kein echtes Geld</i>"
+            )
         except Exception as e:
             log.error(f"  ❌ SL-Fehler {symbol}: {e}")
 
@@ -195,9 +227,19 @@ def kauf_order(trading_client, symbol: str, notional: float):
         )
         order = trading_client.submit_order(req)
         log.info(f"  ✅ KAUF-Order: {symbol} | ${notional:.2f} | ID: {order.id}")
+        tp1 = round(notional / kurs * (1 + TP1_PCT) * kurs, 2) if 'kurs' in dir() else 0
+        telegram(
+            f"🚀 <b>KAUF ausgeführt – Krypto Bot 2</b>\n\n"
+            f"🪙 Symbol: <b>{symbol}</b>\n"
+            f"💰 Investiert: ${notional:.2f}\n"
+            f"🛑 Stop-Loss: -1.5%\n"
+            f"🎯 TP1: +4% (50%) | TP2: +10% (50%)\n\n"
+            f"<i>Paper Trading – kein echtes Geld</i>"
+        )
         return True
     except Exception as e:
         log.error(f"  ❌ Kauf-Fehler {symbol}: {e}")
+        telegram(f"❌ <b>Kauf-Fehler – Krypto Bot 2</b>\n{symbol}: {e}")
         return False
 
 def verkauf_order(trading_client, symbol: str):
@@ -294,6 +336,31 @@ def main():
             log.info("  Keine offenen Positionen")
     except Exception as e:
         log.warning(f"Portfolio-Fehler: {e}")
+
+    # Täglicher Statusbericht via Telegram
+    try:
+        positionen = trading_client.get_all_positions()
+        pos_text = ""
+        gesamt_pnl = 0.0
+        for pos in positionen:
+            pnl = float(pos.unrealized_pl)
+            pnl_pct = float(pos.unrealized_plpc) * 100
+            gesamt_pnl += pnl
+            pos_text += f"• {pos.symbol}: {pnl_pct:+.1f}% (${pnl:+.2f})\n"
+        konto2    = trading_client.get_account()
+        portfolio = float(konto2.portfolio_value)
+        kaufkraft = float(konto2.buying_power)
+        telegram(
+            f"📊 <b>Krypto Bot 2 – Scan abgeschlossen</b>\n"
+            f"🕐 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC\n\n"
+            f"💼 Portfolio: ${portfolio:,.2f}\n"
+            f"💵 Kaufkraft: ${kaufkraft:,.2f}\n"
+            f"📈 Offene P&L: ${gesamt_pnl:+.2f}\n\n" +
+            (f"<b>Positionen:</b>\n{pos_text}" if pos_text else "✅ Keine offenen Positionen\n") +
+            f"\n⏳ Nächster Scan: in 30 Min"
+        )
+    except Exception as e:
+        log.warning(f"Telegram-Statusbericht Fehler: {e}")
 
     log.info("\n" + "=" * 65)
     log.info("SCAN ABGESCHLOSSEN")
